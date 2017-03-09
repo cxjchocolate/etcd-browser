@@ -33,6 +33,7 @@ var serverPort = process.env.SERVER_PORT || 8000;
 var publicDir = 'frontend';
 var authUser = process.env.AUTH_USER;
 var authPass = process.env.AUTH_PASS;
+var authMode = process.env.AUTH_MODE;
 
 
 
@@ -49,6 +50,7 @@ var mimeTypes = {
 http.createServer(function serverFile(req, res) {
   // authenticaton
   if(!auth(req, res)) {
+    debugger
     res.statusCode = 401;
     res.setHeader('WWW-Authenticate', 'Basic realm="MyRealmName"');
     res.end('Unauthorized');
@@ -83,7 +85,8 @@ function proxy(client_req, client_res) {
     hostname: etcdHost,
     port: etcdPort,
     path: client_req.url,
-    method: client_req.method
+    method: client_req.method,
+    headers: {'Authorization': make_base_auth(authUser, authPass)}
   };
 
   // https/certs supprt
@@ -98,10 +101,10 @@ function proxy(client_req, client_res) {
     // to a different location, indicates that the node we are
     // querying is not the leader. This will redo the request
     // on the leader which is reported by the Location header
+    console.log('Got client response: ' + res.statusCode);
     if (res.statusCode === 307) {
         opts.hostname = url.parse(res.headers['location']).hostname;
         client_req.pipe(requester(opts, function(res) {
-            console.log('Got response: ' + res.statusCode);
             res.pipe(client_res, {end: true});
         }, {end: true}));
     } else {
@@ -112,7 +115,7 @@ function proxy(client_req, client_res) {
 
 
 function auth(req, res) {
-  if(!authUser) return true;
+  if(!authMode || authMode == 'false' || authMode == '0') return true;
 
   var auth = req.headers.authorization;
   if(!auth) return false;
@@ -128,5 +131,13 @@ function auth(req, res) {
   auth = auth.match(/^([^:]*):(.*)$/);
   if(!auth) return false;
 
-  return (auth[1] === authUser && auth[2] === authPass)
+  authUser = auth[1];
+  authPass = auth[2];
+  return true;
+}
+
+function make_base_auth(user, password) {
+    var b = new Buffer(user + ':' + password);
+    var hash = b.toString('base64');
+    return "Basic " + hash;
 }
